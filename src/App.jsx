@@ -4937,7 +4937,35 @@ const CATEGORY_META = {
   },
 };
 
-let idCounter = 1;
+// idCounter previously always started at 1 on every page load, regardless
+// of what was already saved in localStorage. That meant a fresh session's
+// first new habit could be assigned an id (e.g. "h1") that a previously
+// saved habit already had. Two habits sharing an id causes deleteHabit()
+// to remove both at once (filters by id), and any stackAfter pointing at
+// that shared id becomes ambiguous — which is what produced the
+// "delete one habit, whole stack doubles/disappears" bug. We now seed the
+// counter from the highest numeric id already present in saved scorecard
+// habits, so new ids never collide with existing ones. This only changes
+// how *future* ids are generated — no existing saved habits are modified.
+function getInitialIdCounter() {
+  if (typeof window === "undefined") return 1;
+  try {
+    const raw = window.localStorage.getItem(APP_STORE_KEY);
+    if (!raw) return 1;
+    const state = JSON.parse(raw);
+    const habits = state?.scorecardHabits || [];
+    let max = 0;
+    habits.forEach((h) => {
+      const match = /^h(\d+)$/.exec(h?.id || "");
+      if (match) max = Math.max(max, parseInt(match[1], 10));
+    });
+    return max + 1;
+  } catch {
+    return 1;
+  }
+}
+
+let idCounter = getInitialIdCounter();
 const nextId = () => `h${idCounter++}`;
 
 function CategoryPill({ value, active, onClick }) {
