@@ -5607,62 +5607,6 @@ function HabitChain({
   const isLast = siblingIndex === -1 || siblingIndex === siblingGroup.length - 1;
   const canReorder = siblingGroup.length > 1 && typeof onMove === "function";
 
-  // Refs mirror the latest isFirst/isLast on every render so the
-  // press-and-hold interval below (whose closure is set up once per
-  // press) always checks the current edge state rather than a stale one
-  // captured when the hold began — otherwise holding "up" would keep
-  // firing past the top of the list.
-  const isFirstRef = useRef(isFirst);
-  const isLastRef = useRef(isLast);
-  isFirstRef.current = isFirst;
-  isLastRef.current = isLast;
-
-  const repeatTimeoutRef = useRef(null);
-  const repeatIntervalRef = useRef(null);
-
-  function stopRepeat() {
-    if (repeatTimeoutRef.current) {
-      clearTimeout(repeatTimeoutRef.current);
-      repeatTimeoutRef.current = null;
-    }
-    if (repeatIntervalRef.current) {
-      clearInterval(repeatIntervalRef.current);
-      repeatIntervalRef.current = null;
-    }
-  }
-
-  useEffect(() => {
-    window.addEventListener("pointerup", stopRepeat);
-    window.addEventListener("pointercancel", stopRepeat);
-    return () => {
-      window.removeEventListener("pointerup", stopRepeat);
-      window.removeEventListener("pointercancel", stopRepeat);
-      stopRepeat();
-    };
-  }, []);
-
-  // Moves the card one step immediately (so a quick tap still works like
-  // before), then — if the button is held down — keeps moving it further,
-  // one step at a time, until the pointer is released or it hits the top
-  // or bottom of the list. This lets the same up/down button reposition a
-  // card any distance, not just swap with its immediate neighbor.
-  function startRepeat(direction) {
-    const atEdge = direction === "up" ? isFirstRef.current : isLastRef.current;
-    if (atEdge) return;
-    onMove(habit.id, direction);
-    stopRepeat();
-    repeatTimeoutRef.current = setTimeout(() => {
-      repeatIntervalRef.current = setInterval(() => {
-        const stillOk = direction === "up" ? !isFirstRef.current : !isLastRef.current;
-        if (!stillOk) {
-          stopRepeat();
-          return;
-        }
-        onMove(habit.id, direction);
-      }, 130);
-    }, 400);
-  }
-
   return (
     <div style={{ marginLeft: depth * 26 }}>
       <div
@@ -5726,9 +5670,7 @@ function HabitChain({
               <div style={{ display: "flex", flexDirection: "column", marginRight: 2 }}>
                 <button
                   type="button"
-                  onPointerDown={(e) => { e.preventDefault(); startRepeat("up"); }}
-                  onPointerUp={stopRepeat}
-                  onPointerLeave={stopRepeat}
+                  onClick={() => onMove(habit.id, "up")}
                   disabled={isFirst}
                   className="hs-focus-ring"
                   style={{
@@ -5737,17 +5679,14 @@ function HabitChain({
                     cursor: isFirst ? "default" : "pointer",
                     padding: "1px 4px",
                     opacity: isFirst ? 0.3 : 1,
-                    touchAction: "none",
                   }}
-                  title="Move up — hold to keep moving"
+                  title="Move up"
                 >
                   <ChevronUp size={13} color="var(--ink-soft)" />
                 </button>
                 <button
                   type="button"
-                  onPointerDown={(e) => { e.preventDefault(); startRepeat("down"); }}
-                  onPointerUp={stopRepeat}
-                  onPointerLeave={stopRepeat}
+                  onClick={() => onMove(habit.id, "down")}
                   disabled={isLast}
                   className="hs-focus-ring"
                   style={{
@@ -5756,9 +5695,8 @@ function HabitChain({
                     cursor: isLast ? "default" : "pointer",
                     padding: "1px 4px",
                     opacity: isLast ? 0.3 : 1,
-                    touchAction: "none",
                   }}
-                  title="Move down — hold to keep moving"
+                  title="Move down"
                 >
                   <ChevronDown size={13} color="var(--ink-soft)" />
                 </button>
