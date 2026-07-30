@@ -5251,24 +5251,37 @@ function HabitScorecard({ ctx }) {
   // Reorders a habit up or down among its siblings (habits stacked at the
   // same level, sharing the same stackAfter parent) so cards in the same
   // stack can be re-prioritized for easier scanning.
+  //
+  // NOTE: this rewrites every sibling's `order` as a clean 0..n-1 sequence
+  // on every move, instead of only swapping the two `order` values that
+  // moved. Older data could end up with two habits sharing the same
+  // `order` value (e.g. after habits were added/removed/re-stacked), and
+  // once that happens a simple two-value swap can silently stop producing
+  // any visible change on the next click — the sort ties mask the move.
+  // Normalizing here fixes that permanently, healing old data the first
+  // time each stack is touched.
   function moveHabit(id, direction) {
     setHabits((prev) => {
       const habit = prev.find((h) => h.id === id);
       if (!habit) return prev;
       const parentKey = habit.stackAfter || null;
+      // Tie-break by original array position so the sort stays stable even
+      // when two siblings currently share the same `order` value.
       const siblings = prev
-        .filter((h) => (h.stackAfter || null) === parentKey)
-        .sort((a, b) => a.order - b.order);
+        .map((h, i) => ({ h, i }))
+        .filter(({ h }) => (h.stackAfter || null) === parentKey)
+        .sort((a, b) => (a.h.order - b.h.order) || (a.i - b.i))
+        .map(({ h }) => h);
+
       const idx = siblings.findIndex((h) => h.id === id);
       const swapIdx = direction === "up" ? idx - 1 : idx + 1;
       if (idx === -1 || swapIdx < 0 || swapIdx >= siblings.length) return prev;
-      const a = siblings[idx];
-      const b = siblings[swapIdx];
-      return prev.map((h) => {
-        if (h.id === a.id) return { ...h, order: b.order };
-        if (h.id === b.id) return { ...h, order: a.order };
-        return h;
-      });
+
+      const reordered = [...siblings];
+      [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+
+      const orderById = new Map(reordered.map((h, i) => [h.id, i]));
+      return prev.map((h) => (orderById.has(h.id) ? { ...h, order: orderById.get(h.id) } : h));
     });
   }
 
