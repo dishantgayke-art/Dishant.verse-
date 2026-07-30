@@ -6,7 +6,7 @@ import {
   PenTool, Wind, Code2, MoreVertical, Play, Pause, RotateCcw, CheckCircle2,
   Trophy, Zap, Star, User, Circle, PlusCircle, FileSignature, ListChecks,
   CalendarDays, Search, Trash2, Square, Volume2, VolumeX, AlertTriangle, Sprout,
-  Minus, Equal, MapPin, Link2, Pencil, ArrowRight, ChevronDown, ChevronUp, NotebookPen, CornerDownRight, Menu
+  Minus, Equal, MapPin, Link2, Pencil, ArrowRight, ChevronDown, ChevronUp, NotebookPen, CornerDownRight, Menu, ChevronsUpDown
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -5758,16 +5758,15 @@ function HabitChain({
                     border: "1px solid var(--line-strong)",
                     borderRadius: 6,
                     cursor: "pointer",
-                    padding: "3px 6px",
+                    padding: "3px 4px",
                     display: "flex",
                     alignItems: "center",
-                    gap: 2,
+                    justifyContent: "center",
                     marginRight: 2,
                   }}
                   title="Move to a different position in the sequence"
                 >
-                  <span className="hs-mono" style={{ fontSize: 10, color: "var(--ink-soft)", letterSpacing: "0.03em" }}>Move</span>
-                  <ChevronDown size={11} color="var(--ink-soft)" />
+                  <ChevronsUpDown size={13} color="var(--ink-soft)" />
                 </button>
                 {moveMenuOpen && (
                   <div
