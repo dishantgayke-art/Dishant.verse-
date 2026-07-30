@@ -6,7 +6,7 @@ import {
   PenTool, Wind, Code2, MoreVertical, Play, Pause, RotateCcw, CheckCircle2,
   Trophy, Zap, Star, User, Circle, PlusCircle, FileSignature, ListChecks,
   CalendarDays, Search, Trash2, Square, Volume2, VolumeX, AlertTriangle, Sprout,
-  Minus, Equal, MapPin, Link2, Pencil, ArrowRight, ChevronDown, ChevronUp, NotebookPen, CornerDownRight, Menu, ChevronsUpDown
+  Minus, Equal, MapPin, Link2, Pencil, ArrowRight, ChevronDown, ChevronUp, NotebookPen, CornerDownRight, Menu
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -4917,8 +4917,6 @@ const TOKENS = `
   }
   .hs-btn-ghost:hover { background: var(--brand-soft); color: var(--brand); }
 
-  .hs-move-menu-item:hover { background: var(--brand-soft); }
-
   .hs-focus-ring:focus-visible {
     outline: none;
   }
@@ -5150,14 +5148,6 @@ function HabitScorecard({ ctx }) {
   const [editDraft, setEditDraft] = useState(null);
 
   const [collapsedIds, setCollapsedIds] = useState(new Set());
-  const [moveMenuId, setMoveMenuId] = useState(null);
-
-  useEffect(() => {
-    if (!moveMenuId) return;
-    const close = () => setMoveMenuId(null);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [moveMenuId]);
 
   const activeHabit = habits.find((h) => h.id === activeId) || null;
 
@@ -5279,32 +5269,6 @@ function HabitScorecard({ ctx }) {
         if (h.id === b.id) return { ...h, order: a.order };
         return h;
       });
-    });
-  }
-
-  // Repositions a TOP-LEVEL habit (one with no stackAfter) anywhere among
-  // the other top-level habits, rather than only swapping with the sibling
-  // directly above/below it. `afterId` is the id of the top-level habit it
-  // should land right after, or null to send it to the very top of the
-  // sequence.
-  function moveRootHabitTo(id, afterId) {
-    setHabits((prev) => {
-      const roots = prev.filter((h) => !h.stackAfter).sort((a, b) => a.order - b.order);
-      const fromIdx = roots.findIndex((h) => h.id === id);
-      if (fromIdx === -1) return prev;
-      const [moving] = roots.splice(fromIdx, 1);
-
-      let insertAt;
-      if (afterId == null) {
-        insertAt = 0;
-      } else {
-        const afterIdx = roots.findIndex((h) => h.id === afterId);
-        insertAt = afterIdx === -1 ? roots.length : afterIdx + 1;
-      }
-      roots.splice(insertAt, 0, moving);
-
-      const orderById = new Map(roots.map((h, i) => [h.id, i]));
-      return prev.map((h) => (orderById.has(h.id) ? { ...h, order: orderById.get(h.id) } : h));
     });
   }
 
@@ -5590,11 +5554,6 @@ function HabitScorecard({ ctx }) {
                 onToggleCollapse={toggleCollapsed}
                 allowCollapse
                 isRoot
-                roots={roots}
-                onMoveRootTo={moveRootHabitTo}
-                moveMenuOpen={moveMenuId === h.id}
-                onToggleMoveMenu={() => setMoveMenuId((cur) => (cur === h.id ? null : h.id))}
-                onCloseMoveMenu={() => setMoveMenuId(null)}
               />
             ))}
           </div>
@@ -5630,15 +5589,9 @@ function HabitChain({
   onToggleCollapse,
   allowCollapse = false,
   isRoot = false,
-  roots = [],
-  onMoveRootTo,
-  moveMenuOpen = false,
-  onToggleMoveMenu,
-  onCloseMoveMenu,
 }) {
   const children = siblingsOf(habit.id);
   const hasChildren = children.length > 0;
-  const canRepositionRoot = isRoot && typeof onMoveRootTo === "function" && roots.length > 1;
 
   function countDescendants(id) {
     const direct = siblingsOf(id);
@@ -5653,6 +5606,62 @@ function HabitChain({
   const isFirst = siblingIndex <= 0;
   const isLast = siblingIndex === -1 || siblingIndex === siblingGroup.length - 1;
   const canReorder = siblingGroup.length > 1 && typeof onMove === "function";
+
+  // Refs mirror the latest isFirst/isLast on every render so the
+  // press-and-hold interval below (whose closure is set up once per
+  // press) always checks the current edge state rather than a stale one
+  // captured when the hold began — otherwise holding "up" would keep
+  // firing past the top of the list.
+  const isFirstRef = useRef(isFirst);
+  const isLastRef = useRef(isLast);
+  isFirstRef.current = isFirst;
+  isLastRef.current = isLast;
+
+  const repeatTimeoutRef = useRef(null);
+  const repeatIntervalRef = useRef(null);
+
+  function stopRepeat() {
+    if (repeatTimeoutRef.current) {
+      clearTimeout(repeatTimeoutRef.current);
+      repeatTimeoutRef.current = null;
+    }
+    if (repeatIntervalRef.current) {
+      clearInterval(repeatIntervalRef.current);
+      repeatIntervalRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    window.addEventListener("pointerup", stopRepeat);
+    window.addEventListener("pointercancel", stopRepeat);
+    return () => {
+      window.removeEventListener("pointerup", stopRepeat);
+      window.removeEventListener("pointercancel", stopRepeat);
+      stopRepeat();
+    };
+  }, []);
+
+  // Moves the card one step immediately (so a quick tap still works like
+  // before), then — if the button is held down — keeps moving it further,
+  // one step at a time, until the pointer is released or it hits the top
+  // or bottom of the list. This lets the same up/down button reposition a
+  // card any distance, not just swap with its immediate neighbor.
+  function startRepeat(direction) {
+    const atEdge = direction === "up" ? isFirstRef.current : isLastRef.current;
+    if (atEdge) return;
+    onMove(habit.id, direction);
+    stopRepeat();
+    repeatTimeoutRef.current = setTimeout(() => {
+      repeatIntervalRef.current = setInterval(() => {
+        const stillOk = direction === "up" ? !isFirstRef.current : !isLastRef.current;
+        if (!stillOk) {
+          stopRepeat();
+          return;
+        }
+        onMove(habit.id, direction);
+      }, 130);
+    }, 400);
+  }
 
   return (
     <div style={{ marginLeft: depth * 26 }}>
@@ -5716,7 +5725,10 @@ function HabitChain({
             {canReorder && (
               <div style={{ display: "flex", flexDirection: "column", marginRight: 2 }}>
                 <button
-                  onClick={() => onMove(habit.id, "up")}
+                  type="button"
+                  onPointerDown={(e) => { e.preventDefault(); startRepeat("up"); }}
+                  onPointerUp={stopRepeat}
+                  onPointerLeave={stopRepeat}
                   disabled={isFirst}
                   className="hs-focus-ring"
                   style={{
@@ -5725,13 +5737,17 @@ function HabitChain({
                     cursor: isFirst ? "default" : "pointer",
                     padding: "1px 4px",
                     opacity: isFirst ? 0.3 : 1,
+                    touchAction: "none",
                   }}
-                  title="Move up in stack"
+                  title="Move up — hold to keep moving"
                 >
                   <ChevronUp size={13} color="var(--ink-soft)" />
                 </button>
                 <button
-                  onClick={() => onMove(habit.id, "down")}
+                  type="button"
+                  onPointerDown={(e) => { e.preventDefault(); startRepeat("down"); }}
+                  onPointerUp={stopRepeat}
+                  onPointerLeave={stopRepeat}
                   disabled={isLast}
                   className="hs-focus-ring"
                   style={{
@@ -5740,90 +5756,12 @@ function HabitChain({
                     cursor: isLast ? "default" : "pointer",
                     padding: "1px 4px",
                     opacity: isLast ? 0.3 : 1,
+                    touchAction: "none",
                   }}
-                  title="Move down in stack"
+                  title="Move down — hold to keep moving"
                 >
                   <ChevronDown size={13} color="var(--ink-soft)" />
                 </button>
-              </div>
-            )}
-            {canRepositionRoot && (
-              <div style={{ position: "relative" }}>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onToggleMoveMenu && onToggleMoveMenu(); }}
-                  className="hs-focus-ring"
-                  style={{
-                    background: "none",
-                    border: "1px solid var(--line-strong)",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    padding: "3px 4px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginRight: 2,
-                  }}
-                  title="Move to a different position in the sequence"
-                >
-                  <ChevronsUpDown size={13} color="var(--ink-soft)" />
-                </button>
-                {moveMenuOpen && (
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      position: "absolute",
-                      top: "calc(100% + 4px)",
-                      right: 0,
-                      zIndex: 20,
-                      width: 220,
-                      maxHeight: 260,
-                      overflowY: "auto",
-                      background: "var(--paper-raised)",
-                      border: "1px solid var(--line-strong)",
-                      borderRadius: 10,
-                      boxShadow: "0 12px 28px -10px rgba(34,48,58,0.35)",
-                      padding: 6,
-                    }}
-                  >
-                    <div className="hs-mono" style={{ fontSize: 10, color: "var(--ink-faint)", padding: "4px 8px 6px", letterSpacing: "0.06em" }}>
-                      MOVE TO POSITION
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => { onMoveRootTo(habit.id, null); onCloseMoveMenu && onCloseMoveMenu(); }}
-                      className="hs-move-menu-item"
-                      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: "7px 8px", fontSize: 13, borderRadius: 6, color: "var(--ink)" }}
-                    >
-                      Start of sequence
-                    </button>
-                    {roots.filter((r) => r.id !== habit.id).map((r) => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        onClick={() => { onMoveRootTo(habit.id, r.id); onCloseMoveMenu && onCloseMoveMenu(); }}
-                        className="hs-move-menu-item"
-                        style={{
-                          display: "block",
-                          width: "100%",
-                          textAlign: "left",
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          padding: "7px 8px",
-                          fontSize: 13,
-                          borderRadius: 6,
-                          color: "var(--ink)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        After "{r.name}"
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             )}
             {allowCollapse && hasChildren && (
